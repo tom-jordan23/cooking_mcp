@@ -393,7 +393,7 @@ async def health_check(settings: Settings = Depends(get_settings)):
     checks = {}
 
     if isinstance(database_check, ComponentHealth):
-        checks["database"] = database_check.dict()
+        checks["database"] = database_check.model_dump()
     else:
         checks["database"] = {
             "status": "unhealthy",
@@ -402,7 +402,7 @@ async def health_check(settings: Settings = Depends(get_settings)):
         }
 
     if isinstance(redis_check, ComponentHealth):
-        checks["redis"] = redis_check.dict()
+        checks["redis"] = redis_check.model_dump()
     else:
         checks["redis"] = {
             "status": "unhealthy",
@@ -411,7 +411,7 @@ async def health_check(settings: Settings = Depends(get_settings)):
         }
 
     if isinstance(git_check, ComponentHealth):
-        checks["git_repository"] = git_check.dict()
+        checks["git_repository"] = git_check.model_dump()
     else:
         checks["git_repository"] = {
             "status": "unhealthy",
@@ -420,7 +420,7 @@ async def health_check(settings: Settings = Depends(get_settings)):
         }
 
     if isinstance(filesystem_check, ComponentHealth):
-        checks["filesystem"] = filesystem_check.dict()
+        checks["filesystem"] = filesystem_check.model_dump()
     else:
         checks["filesystem"] = {
             "status": "unhealthy",
@@ -461,7 +461,7 @@ async def health_check(settings: Settings = Depends(get_settings)):
 
     # Return appropriate HTTP status code
     if overall_status == "unhealthy":
-        raise HTTPException(status_code=503, detail=health_status.dict())
+        raise HTTPException(status_code=503, detail=health_status.model_dump())
 
     return health_status
 

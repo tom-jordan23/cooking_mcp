@@ -101,6 +101,7 @@ def create_app() -> FastAPI:
         redoc_url="/api/redoc" if not settings.app.is_production else None
     )
 
+
     # Configure middleware
     configure_middleware(app, settings)
 

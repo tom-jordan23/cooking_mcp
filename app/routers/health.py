@@ -79,13 +79,15 @@ async def check_database_health(settings: Settings) -> ComponentHealth:
 
             # Get database version and basic stats
             db_version_result = await conn.execute(text("SELECT version()"))
-            db_version = (await db_version_result.fetchone())[0]
+            db_version_row = await db_version_result.fetchone()
+            db_version = db_version_row[0] if db_version_row else "unknown"
 
             # Check for active connections
             connections_result = await conn.execute(
                 text("SELECT count(*) FROM pg_stat_activity WHERE state = 'active'")
             )
-            active_connections = (await connections_result.fetchone())[0]
+            connections_row = await connections_result.fetchone()
+            active_connections = connections_row[0] if connections_row else 0
 
         await engine.dispose()
 

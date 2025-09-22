@@ -94,25 +94,25 @@ class AuthSettings(BaseSettings):
         min_length=8
     )
 
-    jwt_secret: Optional[str] = Field(
-        default=None,
-        env="JWT_SECRET",
-        description="Secret for JWT token generation",
+    secret_key: str = Field(
+        default="dev-secret-key-change-in-production",
+        env="SECRET_KEY",
+        description="Secret key for JWT token generation",
         min_length=32
     )
 
-    jwt_algorithm: str = Field(
-        default="RS256",
+    algorithm: str = Field(
+        default="HS256",
         env="JWT_ALGORITHM",
         description="JWT signing algorithm"
     )
 
-    token_expiry_hours: int = Field(
-        default=24,
-        env="TOKEN_EXPIRY_HOURS",
-        description="JWT token expiry time in hours",
+    access_token_expire_minutes: int = Field(
+        default=30,
+        env="ACCESS_TOKEN_EXPIRE_MINUTES",
+        description="JWT token expiry time in minutes",
         ge=1,
-        le=168  # Max 1 week
+        le=1440  # Max 24 hours
     )
 
     # Rate limiting
@@ -308,6 +308,136 @@ class LoggingSettings(BaseSettings):
         env_prefix = "LOG_"
 
 
+class TelegramSettings(BaseSettings):
+    """Telegram bot configuration."""
+
+    bot_token: Optional[str] = Field(
+        default=None,
+        env="TELEGRAM_BOT_TOKEN",
+        description="Telegram bot token"
+    )
+
+    chat_id: Optional[str] = Field(
+        default=None,
+        env="TELEGRAM_CHAT_ID",
+        description="Telegram chat ID for notifications"
+    )
+
+    class Config:
+        env_prefix = "TELEGRAM_"
+
+
+class TwilioSettings(BaseSettings):
+    """Twilio configuration for SMS and WhatsApp."""
+
+    account_sid: Optional[str] = Field(
+        default=None,
+        env="TWILIO_ACCOUNT_SID",
+        description="Twilio account SID"
+    )
+
+    auth_token: Optional[str] = Field(
+        default=None,
+        env="TWILIO_AUTH_TOKEN",
+        description="Twilio auth token"
+    )
+
+    sms_from: Optional[str] = Field(
+        default=None,
+        env="TWILIO_SMS_FROM",
+        description="Twilio SMS from number"
+    )
+
+    sms_to: Optional[str] = Field(
+        default=None,
+        env="TWILIO_SMS_TO",
+        description="Default SMS recipient number"
+    )
+
+    whatsapp_from: Optional[str] = Field(
+        default=None,
+        env="TWILIO_WHATSAPP_FROM",
+        description="Twilio WhatsApp from number"
+    )
+
+    whatsapp_to: Optional[str] = Field(
+        default=None,
+        env="TWILIO_WHATSAPP_TO",
+        description="Default WhatsApp recipient number"
+    )
+
+    class Config:
+        env_prefix = "TWILIO_"
+
+
+class EmailSettings(BaseSettings):
+    """Email notification configuration."""
+
+    smtp_host: Optional[str] = Field(
+        default=None,
+        env="EMAIL_SMTP_HOST",
+        description="SMTP server host"
+    )
+
+    smtp_port: int = Field(
+        default=587,
+        env="EMAIL_SMTP_PORT",
+        description="SMTP server port"
+    )
+
+    smtp_user: Optional[str] = Field(
+        default=None,
+        env="EMAIL_SMTP_USER",
+        description="SMTP username"
+    )
+
+    smtp_password: Optional[str] = Field(
+        default=None,
+        env="EMAIL_SMTP_PASSWORD",
+        description="SMTP password"
+    )
+
+    from_email: Optional[str] = Field(
+        default=None,
+        env="EMAIL_FROM",
+        description="From email address"
+    )
+
+    to_email: Optional[str] = Field(
+        default=None,
+        env="EMAIL_TO",
+        description="Default recipient email address"
+    )
+
+    class Config:
+        env_prefix = "EMAIL_"
+
+
+class SignalSettings(BaseSettings):
+    """Signal messenger configuration."""
+
+    service_url: Optional[str] = Field(
+        default=None,
+        env="SIGNAL_SERVICE_URL",
+        description="Signal CLI service URL"
+    )
+
+    from_number: Optional[str] = Field(
+        default=None,
+        env="SIGNAL_FROM_NUMBER",
+        description="Signal from number"
+    )
+
+    to_number: Optional[str] = Field(
+        default=None,
+        env="SIGNAL_TO_NUMBER",
+        description="Default Signal recipient number"
+    )
+
+    class Config:
+        env_prefix = "SIGNAL_"
+
+
 class AppSettings(BaseSettings):
     """Main application configuration."""
 
@@ -400,6 +530,10 @@ class Settings:
         self.redis = RedisSettings()
         self.auth = AuthSettings()
         self.slack = SlackSettings()
+        self.telegram = TelegramSettings()
+        self.twilio = TwilioSettings()
+        self.email = EmailSettings()
+        self.signal = SignalSettings()
         self.git = GitSettings()
         self.logging = LoggingSettings()
 
@@ -526,6 +660,10 @@ __all__ = [
     "RedisSettings",
     "AuthSettings",
     "SlackSettings",
+    "TelegramSettings",
+    "TwilioSettings",
+    "EmailSettings",
+    "SignalSettings",
     "GitSettings",
     "LoggingSettings",
     "settings",

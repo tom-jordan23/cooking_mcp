@@ -1,0 +1,197 @@
+# Family-scale Docker Compose configuration
+# Optimized for Railway/VPS deployment with cost-effective resource usage
+
+version: "3.8"
+
+services:
+  # Main application with health monitoring
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: cooking-mcp-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - MAILGUN_API_KEY=${MAILGUN_API_KEY}
+      - MAILGUN_DOMAIN=${MAILGUN_DOMAIN}
+      - WHATSAPP_TOKEN=${WHATSAPP_TOKEN}
+      - SIGNAL_SERVICE_URL=${SIGNAL_SERVICE_URL}
+    volumes:
+      - notebook_data:/app/notebook:rw
+      - app_logs:/app/logs:rw
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # PostgreSQL with optimized settings for small instances
+  db:
+    image: postgres:15-alpine
+    container_name: cooking-mcp-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-cooking_mcp}
+      - POSTGRES_USER=${POSTGRES_USER:-cooking_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data:rw
+      - postgres_backups:/backups:rw
+    networks:
+      - app_network
+    command: >
+      postgres
+      -c shared_buffers=64MB
+      -c effective_cache_size=192MB
+      -c maintenance_work_mem=16MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=2MB
+      -c min_wal_size=1GB
+      -c max_wal_size=2GB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cooking_user}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.3'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # Redis with memory optimization
+  redis:
+    image: redis:7-alpine
+    container_name: cooking-mcp-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 64mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --appendonly yes
+      --appendfsync everysec
+    volumes:
+      - redis_data:/data:rw
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.2'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # Lightweight backup service
+  backup:
+    image: postgres:15-alpine
+    container_name: cooking-mcp-backup
+    restart: "no"
+    environment:
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-cooking_mcp}
+      - POSTGRES_USER=${POSTGRES_USER:-cooking_user}
+    volumes:
+      - postgres_backups:/backups:rw
+      - ./scripts/backup-family.sh:/backup.sh:ro
+    networks:
+      - app_network
+    depends_on:
+      - db
+    command: ["/backup.sh"]
+    profiles:
+      - backup
+
+  # Health monitoring service (lightweight)
+  healthcheck:
+    image: curlimages/curl:latest
+    container_name: cooking-mcp-healthcheck
+    restart: unless-stopped
+    command: >
+      sh -c "
+      while true; do
+        curl -f http://app:8080/health || echo 'Health check failed at $(date)'
+        sleep 300
+      done
+      "
+    networks:
+      - app_network
+    depends_on:
+      - app
+    profiles:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+          cpus: '0.1'
+
+volumes:
+  postgres_data:
+    driver: local
+  postgres_backups:
+    driver: local
+  redis_data:
+    driver: local
+  notebook_data:
+    driver: local
+  app_logs:
+    driver: local
+
+networks:
+  app_network:
+    driver: bridge

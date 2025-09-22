@@ -1,0 +1,116 @@
+# ConfigMap for application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cooking-mcp-config
+  namespace: cooking-mcp
+  labels:
+    app.kubernetes.io/name: cooking-mcp
+    app.kubernetes.io/component: config
+data:
+  # Application settings
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+
+  # Database configuration
+  POSTGRES_DB: "cooking_mcp"
+  POSTGRES_USER: "cooking_user"
+
+  # Redis configuration
+  REDIS_DB: "0"
+
+  # Application URLs
+  CORS_ORIGINS: '["https://cooking-mcp.example.com"]'
+
+  # Feature flags
+  ENABLE_METRICS: "true"
+  ENABLE_TRACING: "true"
+
+  # Timeouts and limits
+  REQUEST_TIMEOUT: "30"
+  MAX_REQUEST_SIZE: "10485760"  # 10MB
+
+  # Rate limiting
+  RATE_LIMIT_REQUESTS: "100"
+  RATE_LIMIT_WINDOW: "60"
+
+---
+# ConfigMap for Prometheus monitoring
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: cooking-mcp
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: config
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    rule_files:
+      - "alert_rules.yml"
+
+    scrape_configs:
+      - job_name: 'cooking-mcp-app'
+        static_configs:
+          - targets: ['cooking-mcp-app:8080']
+        metrics_path: '/metrics'
+        scrape_interval: 30s
+
+      - job_name: 'postgres-exporter'
+        static_configs:
+          - targets: ['postgres-exporter:9187']
+        scrape_interval: 30s
+
+      - job_name: 'redis-exporter'
+        static_configs:
+          - targets: ['redis-exporter:9121']
+        scrape_interval: 30s
+
+      - job_name: 'node-exporter'
+        static_configs:
+          - targets: ['node-exporter:9100']
+        scrape_interval: 30s
+
+  alert_rules.yml: |
+    groups:
+      - name: cooking-mcp-alerts
+        rules:
+          - alert: HighErrorRate
+            expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High error rate detected"
+              description: "Error rate is {{ $value }} errors per second"
+
+          - alert: DatabaseDown
+            expr: up{job="postgres-exporter"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Database is down"
+              description: "PostgreSQL database is not responding"
+
+          - alert: RedisDown
+            expr: up{job="redis-exporter"} == 0
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Redis is down"
+              description: "Redis cache is not responding"
+
+          - alert: HighMemoryUsage
+            expr: container_memory_usage_bytes / container_spec_memory_limit_bytes > 0.9
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High memory usage"
+              description: "Container memory usage is above 90%"

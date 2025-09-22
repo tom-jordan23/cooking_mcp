@@ -1,0 +1,300 @@
+# Main application deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cooking-mcp-app
+  namespace: cooking-mcp
+  labels:
+    app.kubernetes.io/name: cooking-mcp
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: cooking-mcp
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cooking-mcp
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cooking-mcp
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: cooking-mcp
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      serviceAccountName: cooking-mcp-app
+      containers:
+        - name: app
+          image: ghcr.io/your-org/cooking-mcp:latest
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          env:
+            # Configuration from ConfigMap
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: cooking-mcp-config
+                  key: ENVIRONMENT
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: cooking-mcp-config
+                  key: LOG_LEVEL
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: cooking-mcp-config
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: cooking-mcp-config
+                  key: POSTGRES_USER
+            - name: REDIS_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: cooking-mcp-config
+                  key: REDIS_DB
+
+            # Secrets
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cooking-mcp-secrets
+                  key: SECRET_KEY
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cooking-mcp-secrets
+                  key: JWT_SECRET_KEY
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cooking-mcp-secrets
+                  key: POSTGRES_PASSWORD
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cooking-mcp-secrets
+                  key: REDIS_PASSWORD
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cooking-mcp-secrets
+                  key: SLACK_BOT_TOKEN
+            - name: SLACK_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cooking-mcp-secrets
+                  key: SLACK_SIGNING_SECRET
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cooking-mcp-secrets
+                  key: TELEGRAM_BOT_TOKEN
+            - name: TWILIO_ACCOUNT_SID
+              valueFrom:
+                secretKeyRef:
+                  name: cooking-mcp-secrets
+                  key: TWILIO_ACCOUNT_SID
+            - name: TWILIO_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cooking-mcp-secrets
+                  key: TWILIO_AUTH_TOKEN
+
+            # Computed environment variables
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)"
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/$(REDIS_DB)"
+
+          volumeMounts:
+            - name: notebook-data
+              mountPath: /app/notebook
+            - name: app-logs
+              mountPath: /app/logs
+            - name: tmp
+              mountPath: /tmp
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+
+      volumes:
+        - name: notebook-data
+          persistentVolumeClaim:
+            claimName: notebook-data
+        - name: app-logs
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/name
+                      operator: In
+                      values:
+                        - cooking-mcp
+                topologyKey: kubernetes.io/hostname
+
+---
+# Application Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: cooking-mcp-app
+  namespace: cooking-mcp
+  labels:
+    app.kubernetes.io/name: cooking-mcp
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: cooking-mcp
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: cooking-mcp
+    app.kubernetes.io/component: api
+
+---
+# Notebook data PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: notebook-data
+  namespace: cooking-mcp
+  labels:
+    app.kubernetes.io/name: cooking-mcp
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - ReadWriteMany  # Allows multiple pods to access the git repository
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: standard  # Adjust based on your cluster
+
+---
+# Service Account for the application
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cooking-mcp-app
+  namespace: cooking-mcp
+  labels:
+    app.kubernetes.io/name: cooking-mcp
+    app.kubernetes.io/component: serviceaccount
+automountServiceAccountToken: false  # Security best practice
+
+---
+# Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cooking-mcp-app-hpa
+  namespace: cooking-mcp
+  labels:
+    app.kubernetes.io/name: cooking-mcp
+    app.kubernetes.io/component: autoscaler
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cooking-mcp-app
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60

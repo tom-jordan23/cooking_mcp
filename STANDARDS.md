@@ -684,6 +684,9 @@ Before considering work complete:
 - **Cost-Effective**: Optimize for family budget (~$10-20/month)
 - **Maintainable**: Single person can maintain and extend the system
 
+### Work Tracking
+- **Progress Tracking**: You will record your progress in DEVELOPMENT.md without fail.
+- **Duplicative Work**: If you have to repeat work because you did not track it, that work should not be charged
 ---
 
 ## Non-Compliance

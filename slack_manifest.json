@@ -1,0 +1,76 @@
+{
+  "display_information": {
+    "name": "MCP Cooking Lab Notebook",
+    "description": "Collect feedback on cooking sessions and experiments",
+    "background_color": "#2c3e50",
+    "long_description": "A Slack bot for collecting structured feedback on cooking sessions. Integrates with the MCP Cooking Lab Notebook system to track cooking experiments, gather feedback from family members, and maintain a detailed cooking journal."
+  },
+  "features": {
+    "app_home": {
+      "home_tab_enabled": true,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "bot_user": {
+      "display_name": "CookingLab",
+      "always_online": true
+    },
+    "slash_commands": [
+      {
+        "command": "/cook-feedback",
+        "url": "https://your-domain.com/slack/commands/cook-feedback",
+        "description": "Submit feedback for a cooking session",
+        "usage_hint": "entry-id (e.g., 2024-12-15_grilled-chicken)",
+        "should_escape": false
+      },
+      {
+        "command": "/cook-schedule",
+        "url": "https://your-domain.com/slack/commands/cook-schedule",
+        "description": "Schedule feedback collection for a cooking session",
+        "usage_hint": "entry-id delay-minutes (e.g., 2024-12-15_dinner 45)",
+        "should_escape": false
+      }
+    ],
+    "shortcuts": [
+      {
+        "name": "Quick Cooking Feedback",
+        "type": "message",
+        "callback_id": "quick_feedback_shortcut",
+        "description": "Quickly rate a cooking session from any message"
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "channels:read",
+        "chat:write",
+        "commands",
+        "im:history",
+        "im:read",
+        "im:write",
+        "users:read",
+        "users:read.email",
+        "files:read",
+        "files:write"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "request_url": "https://your-domain.com/slack/events",
+      "bot_events": [
+        "app_mention",
+        "message.im"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://your-domain.com/slack/interactive"
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

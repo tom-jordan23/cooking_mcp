@@ -75,18 +75,18 @@ async def check_database_health(settings: Settings) -> ComponentHealth:
         async with engine.begin() as conn:
             # Simple query to test connectivity
             result = await conn.execute(text("SELECT 1"))
-            await result.fetchone()
+            result.fetchone()
 
             # Get database version and basic stats
             db_version_result = await conn.execute(text("SELECT version()"))
-            db_version_row = await db_version_result.fetchone()
+            db_version_row = db_version_result.fetchone()
             db_version = db_version_row[0] if db_version_row else "unknown"
 
             # Check for active connections
             connections_result = await conn.execute(
                 text("SELECT count(*) FROM pg_stat_activity WHERE state = 'active'")
             )
-            connections_row = await connections_result.fetchone()
+            connections_row = connections_result.fetchone()
             active_connections = connections_row[0] if connections_row else 0
 
         await engine.dispose()
@@ -395,7 +395,7 @@ async def health_check(settings: Settings = Depends(get_settings)):
     checks = {}
 
     if isinstance(database_check, ComponentHealth):
-        checks["database"] = database_check.model_dump()
+        checks["database"] = database_check.model_dump(mode='json')
     else:
         checks["database"] = {
             "status": "unhealthy",
@@ -404,7 +404,7 @@ async def health_check(settings: Settings = Depends(get_settings)):
         }
 
     if isinstance(redis_check, ComponentHealth):
-        checks["redis"] = redis_check.model_dump()
+        checks["redis"] = redis_check.model_dump(mode='json')
     else:
         checks["redis"] = {
             "status": "unhealthy",
@@ -413,7 +413,7 @@ async def health_check(settings: Settings = Depends(get_settings)):
         }
 
     if isinstance(git_check, ComponentHealth):
-        checks["git_repository"] = git_check.model_dump()
+        checks["git_repository"] = git_check.model_dump(mode='json')
     else:
         checks["git_repository"] = {
             "status": "unhealthy",
@@ -422,7 +422,7 @@ async def health_check(settings: Settings = Depends(get_settings)):
         }
 
     if isinstance(filesystem_check, ComponentHealth):
-        checks["filesystem"] = filesystem_check.model_dump()
+        checks["filesystem"] = filesystem_check.model_dump(mode='json')
     else:
         checks["filesystem"] = {
             "status": "unhealthy",
@@ -463,7 +463,7 @@ async def health_check(settings: Settings = Depends(get_settings)):
 
     # Return appropriate HTTP status code
     if overall_status == "unhealthy":
-        raise HTTPException(status_code=503, detail=health_status.model_dump())
+        raise HTTPException(status_code=503, detail=health_status.model_dump(mode='json'))
 
     return health_status
 

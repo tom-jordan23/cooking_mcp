@@ -1,0 +1,133 @@
+# Multi-stage production Dockerfile for MCP Cooking Lab Notebook
+# Optimized for security, performance, and minimal attack surface
+
+# Stage 1: Build stage with dependencies
+FROM python:3.11-slim AS builder
+
+# Build arguments for cache busting and metadata
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VERSION=latest
+
+# Metadata labels
+LABEL org.opencontainers.image.title="MCP Cooking Lab Notebook"
+LABEL org.opencontainers.image.description="Production-ready MCP cooking lab notebook system"
+LABEL org.opencontainers.image.version=$VERSION
+LABEL org.opencontainers.image.created=$BUILD_DATE
+LABEL org.opencontainers.image.revision=$VCS_REF
+LABEL org.opencontainers.image.vendor="MCP Lab"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/your-org/cooking_mcp"
+LABEL org.opencontainers.image.documentation="https://github.com/your-org/cooking_mcp#readme"
+
+# Set build environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_ROOT_USER_ACTION=ignore
+
+# Install build dependencies with security updates
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    ca-certificates \
+    && apt-get upgrade -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/* \
+    && rm -rf /var/tmp/*
+
+# Create non-root user for building
+RUN groupadd -r -g 1000 builder && useradd -r -u 1000 -g builder builder
+
+WORKDIR /build
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --user --no-warn-script-location -r requirements.txt
+
+# Stage 2: Production runtime
+FROM python:3.11-slim AS runtime
+
+# Install runtime dependencies with security updates
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    ca-certificates \
+    dumb-init \
+    && apt-get upgrade -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/* \
+    && rm -rf /var/tmp/* \
+    && rm -rf /var/cache/*
+
+# Create application user with specific UID/GID for consistency
+RUN groupadd -r -g 1001 appuser && useradd -r -u 1001 -g appuser appuser
+
+# Set production environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PATH=/home/appuser/.local/bin:$PATH \
+    ENVIRONMENT=production \
+    # Security headers
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONHASHSEED=random \
+    # Performance
+    UVICORN_WORKERS=1 \
+    UVICORN_WORKER_CLASS=uvicorn.workers.UvicornWorker
+
+# Create application directories with proper permissions
+WORKDIR /app
+RUN mkdir -p /app/data /app/logs /app/tmp /app/notebook /home/appuser/.cache && \
+    chown -R appuser:appuser /app /home/appuser && \
+    chmod 755 /app && \
+    chmod 750 /app/data /app/logs /app/tmp /app/notebook
+
+# Copy Python dependencies from builder stage
+COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
+
+# Copy application code with proper ownership
+COPY --chown=appuser:appuser app/ ./app/
+COPY --chown=appuser:appuser alembic/ ./alembic/
+COPY --chown=appuser:appuser alembic.ini ./
+
+# Create entrypoint script for proper initialization
+RUN echo '#!/bin/bash\n\
+set -e\n\
+# Initialize Git repository if it doesn'\''t exist\n\
+if [ ! -d "/app/notebook/.git" ]; then\n\
+    cd /app/notebook\n\
+    git init\n\
+    git config user.name "${GIT_AUTHOR_NAME:-Lab Bot}"\n\
+    git config user.email "${GIT_AUTHOR_EMAIL:-lab@example.com}"\n\
+    echo "# MCP Cooking Lab Notebook" > README.md\n\
+    git add README.md\n\
+    git commit -m "Initialize lab notebook repository"\n\
+fi\n\
+# Run database migrations if in production\n\
+if [ "$ENVIRONMENT" = "production" ] && [ "${RUN_MIGRATIONS:-true}" = "true" ]; then\n\
+    echo "Running database migrations..."\n\
+    alembic upgrade head\n\
+fi\n\
+# Start the application\n\
+exec "$@"' > /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh && \
+    chown appuser:appuser /app/entrypoint.sh
+
+# Switch to non-root user
+USER appuser
+
+# Expose port
+EXPOSE 8080
+
+# Health check with proper timeout and retries
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Use dumb-init for proper signal handling and entrypoint for initialization
+ENTRYPOINT ["/usr/bin/dumb-init", "--", "/app/entrypoint.sh"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

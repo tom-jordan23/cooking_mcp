@@ -33,6 +33,53 @@ class AuthManager:
         # Simple comparison for now
         return token == self.bearer_token
 
+    def verify_slack_signature(self, signature: str, timestamp: str, body: bytes) -> bool:
+        """Verify Slack request signature."""
+        import hmac
+        import hashlib
+
+        if not self.slack_signing_secret:
+            return False
+
+        # Check timestamp (prevent replay attacks)
+        try:
+            ts = int(timestamp)
+            if abs(time.time() - ts) > 60 * 5:  # 5 minutes
+                return False
+        except ValueError:
+            return False
+
+        # Create signature
+        sig_basestring = f"v0:{timestamp}:{body.decode('utf-8')}"
+        my_signature = 'v0=' + hmac.new(
+            self.slack_signing_secret.encode(),
+            sig_basestring.encode(),
+            hashlib.sha256
+        ).hexdigest()
+
+        return hmac.compare_digest(signature, my_signature)
+
+    def verify_hmac_signature(self, signature: str, body: bytes) -> bool:
+        """Verify HMAC signature for cross-service communication."""
+        import hmac
+        import hashlib
+
+        if not self.hmac_secret:
+            return False
+
+        # Remove 'sha256=' prefix if present
+        if signature.startswith('sha256='):
+            signature = signature[7:]
+
+        # Create signature
+        expected_signature = hmac.new(
+            self.hmac_secret.encode(),
+            body,
+            hashlib.sha256
+        ).hexdigest()
+
+        return hmac.compare_digest(signature, expected_signature)
+
 from .config import get_settings, Settings
 from .logging import get_logger, security_logger
 
@@ -69,8 +116,8 @@ def get_auth_manager(settings: Settings = Depends(get_settings)) -> AuthManager:
         'bearer_token': settings.auth.bearer_token,
         'slack_signing_secret': settings.slack.signing_secret,
         'hmac_secret': settings.auth.bearer_token,  # Use bearer token as HMAC secret for now
-        'jwt_secret': settings.auth.jwt_secret,
-        'token_expiry_hours': settings.auth.token_expiry_hours
+        'jwt_secret': settings.auth.secret_key,
+        'token_expiry_hours': settings.auth.access_token_expire_minutes / 60
     }
     return AuthManager(config)
 

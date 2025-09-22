@@ -26,7 +26,8 @@ from .utils.logging import (
     log_startup_info,
     log_shutdown_info
 )
-from .routers import health, mcp
+from .routers import health, mcp, auth, slack, notifier, feedback, scheduler
+from .middleware.rate_limiting import rate_limit_middleware
 
 
 # Initialize logging first
@@ -52,7 +53,16 @@ async def lifespan(app: FastAPI):
         # Log startup information
         log_startup_info()
 
-        # TODO: Initialize database connection pool
+        # Initialize database connection pool
+        from .models import init_database
+        await init_database(create_tables=True)
+        logger.info("Database initialized successfully")
+
+        # Start scheduler service
+        from .services.scheduler_service import scheduler_service
+        await scheduler_service.start()
+        logger.info("Scheduler service started")
+
         # TODO: Initialize Redis connection pool
         # TODO: Initialize MCP client connection
         # TODO: Start background tasks (e.g., cleanup jobs)
@@ -69,7 +79,15 @@ async def lifespan(app: FastAPI):
         # Shutdown
         logger.info("Shutting down application")
 
-        # TODO: Close database connections
+        # Stop scheduler service
+        from .services.scheduler_service import scheduler_service
+        await scheduler_service.stop()
+        logger.info("Scheduler service stopped")
+
+        # Close database connections
+        from .models import close_database
+        await close_database()
+        logger.info("Database connections closed")
         # TODO: Close Redis connections
         # TODO: Close MCP client connections
         # TODO: Stop background tasks
@@ -145,6 +163,9 @@ def configure_middleware(app: FastAPI, settings) -> None:
     # Request logging middleware (custom)
     app.add_middleware(RequestLoggingMiddleware)
 
+    # Rate limiting middleware
+    app.middleware("http")(rate_limit_middleware)
+
     # Request size limiting middleware
     @app.middleware("http")
     async def limit_request_size(request: Request, call_next):
@@ -204,8 +225,23 @@ def configure_routers(app: FastAPI, settings) -> None:
     # Health check endpoints (no auth required)
     app.include_router(health.router)
 
+    # Authentication endpoints
+    app.include_router(auth.router)
+
     # MCP bridge endpoints (auth required)
     app.include_router(mcp.router)
+
+    # Slack integration endpoints (Slack signature auth)
+    app.include_router(slack.router)
+
+    # Multi-channel notifier endpoints (auth required)
+    app.include_router(notifier.router)
+
+    # Feedback collection endpoints (mixed auth)
+    app.include_router(feedback.router)
+
+    # Scheduler endpoints (auth required)
+    app.include_router(scheduler.router)
 
     # Root endpoint
     @app.get("/", include_in_schema=False)
@@ -232,6 +268,10 @@ def configure_routers(app: FastAPI, settings) -> None:
             "endpoints": {
                 "health": "/health",
                 "mcp": "/mcp",
+                "slack": "/slack",
+                "notifier": "/notifier",
+                "feedback": "/feedback",
+                "scheduler": "/scheduler",
                 "docs": "/api/docs" if not settings.app.is_production else None
             }
         }

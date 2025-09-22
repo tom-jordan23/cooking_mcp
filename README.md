@@ -98,6 +98,170 @@ This system enables structured cooking experiment tracking with post-cook feedba
    docker-compose down
    ```
 
+### Deploy to Render (Quick Production Deployment)
+
+Render provides an easy way to deploy the system to production with minimal configuration.
+
+#### Prerequisites
+- Render account (free tier available)
+- GitHub repository with your code
+- Environment variables configured
+
+#### Deployment Steps
+
+1. **Prepare your repository**
+   ```bash
+   # Ensure you have a requirements.txt in the root
+   # Ensure you have a Dockerfile or use Render's auto-detect
+   git add .
+   git commit -m "Prepare for Render deployment"
+   git push origin main
+   ```
+
+2. **Create services on Render**
+
+   **Web Service (MCP Bridge):**
+   - Go to [Render Dashboard](https://dashboard.render.com)
+   - Click "New +" → "Web Service"
+   - Connect your GitHub repository
+   - Configure:
+     - **Name**: `cooking-mcp-bridge`
+     - **Environment**: `Python 3.11+`
+     - **Build Command**: `pip install -r requirements.txt`
+     - **Start Command**: `python -m cooking_mcp.bridge`
+     - **Port**: `8080`
+
+   **Background Worker (Notifier):**
+   - Click "New +" → "Background Worker"
+   - Connect same repository
+   - Configure:
+     - **Name**: `cooking-mcp-notifier`
+     - **Environment**: `Python 3.11+`
+     - **Build Command**: `pip install -r requirements.txt`
+     - **Start Command**: `python -m cooking_mcp.notifier`
+
+3. **Set up PostgreSQL database**
+   - Click "New +" → "PostgreSQL"
+   - Configure:
+     - **Name**: `cooking-mcp-db`
+     - **Plan**: Free tier for development
+   - Copy the connection string for environment variables
+
+4. **Configure environment variables**
+
+   For each service, add these environment variables:
+   ```bash
+   # Database
+   DATABASE_URL=postgresql://[from Render PostgreSQL service]
+
+   # MCP Configuration
+   LAB_MCP_TOKEN=your-secure-random-token
+   REPO_ROOT=/opt/render/project/src/notebook
+   GIT_AUTHOR=Lab Bot
+   GIT_EMAIL=lab@yourdomain.com
+
+   # Slack (if using)
+   SLACK_BOT_TOKEN=xoxb-your-bot-token
+   SLACK_SIGNING_SECRET=your-signing-secret
+
+   # Other provider tokens as needed
+   TELEGRAM_BOT_TOKEN=your-telegram-token
+   TWILIO_SID=your-twilio-sid
+   TWILIO_TOKEN=your-twilio-token
+   ```
+
+5. **Deploy and verify**
+   - Services will auto-deploy on git push
+   - Check logs in Render dashboard
+   - Test API endpoints: `https://your-service.onrender.com/health`
+
+#### Render Configuration Files
+
+Create these files in your repository root for easier deployment:
+
+**render.yaml** (Blueprint for easy setup):
+```yaml
+services:
+  - type: web
+    name: cooking-mcp-bridge
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m cooking_mcp.bridge
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cooking-mcp-db
+          property: connectionString
+
+  - type: worker
+    name: cooking-mcp-notifier
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m cooking_mcp.notifier
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cooking-mcp-db
+          property: connectionString
+
+databases:
+  - name: cooking-mcp-db
+    databaseName: cooking_mcp
+    user: cooking_user
+```
+
+**Dockerfile** (if you prefer Docker deployment):
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+EXPOSE 8080
+
+CMD ["python", "-m", "cooking_mcp.bridge"]
+```
+
+#### Post-Deployment Setup
+
+1. **Run database migrations**
+   ```bash
+   # Use Render shell access or create a migration job
+   alembic upgrade head
+   ```
+
+2. **Configure webhook URLs**
+   - Update Slack app webhook URL to: `https://your-service.onrender.com/slack/events`
+   - Update any other webhook configurations
+
+3. **Test the deployment**
+   ```bash
+   curl https://your-service.onrender.com/health
+   curl -X POST https://your-service.onrender.com/mcp/create_entry \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"title": "Test Recipe", "tags": ["test"]}'
+   ```
+
+#### Monitoring and Maintenance
+
+- **Logs**: Available in Render dashboard
+- **Metrics**: Built-in CPU/memory monitoring
+- **Auto-scaling**: Available on paid plans
+- **Custom domains**: Available with SSL certificates
+- **Database backups**: Automatic on paid PostgreSQL plans
+
+#### Cost Optimization
+
+- **Free tier**: Suitable for development and light usage
+- **Starter plan**: $7/month for production workloads
+- **Database**: Free PostgreSQL for development, $7/month for production
+- **Sleep mode**: Free services sleep after 15 minutes of inactivity
+
 ## Architecture
 
 ### Core Components
